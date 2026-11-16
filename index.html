@@ -7,8 +7,8 @@
   <meta name="description" content="Лови ингредиенты одним касанием и собери самый высокий бургер.">
   <title>Chef Burger</title>
   <link rel="icon" href="assets/bun-up.png?v=2" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=2">
-  <script src="game.js?v=3" defer></script>
+  <link rel="stylesheet" href="styles.css?v=4">
+  <script src="game.js?v=4" defer></script>
 </head>
 <body>
   <main class="game">
@@ -26,11 +26,12 @@
       </div>
     </header>
 
-    <section class="stage" aria-label="Игровое поле">
+    <section class="stage" id="stage" aria-label="Игровое поле">
       <div class="tiles" aria-hidden="true"></div>
       <div class="awning" aria-hidden="true"></div>
       <div class="counter" aria-hidden="true"></div>
       <canvas id="board" aria-hidden="true"></canvas>
+      <img class="result-animation" id="resultAnimation" width="415" height="462" alt="Кот с пушистым хвостом крадёт бургер" hidden>
       <button class="playfield" id="playfield" type="button" aria-label="Положить слой" disabled></button>
       <div class="welcome" id="welcome">
         <span class="welcome-title">Поймай момент!</span>

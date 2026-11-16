@@ -9,7 +9,11 @@ const MAX_BALANCE = 0.95;
 const MAX_LANDING_OFFSET = LAYER_WIDTH * 0.54;
 const FALL_DURATION = 0.92;
 const BEST_KEY = "burger-tower-best-layers";
+const CAT_GIF = "assets/cat-steals-burger.gif";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const catGif = reducedMotion ? null : fetch(CAT_GIF)
+  .then(response => response.ok ? response.blob() : null)
+  .catch(() => null);
 
 const ingredients = [
   { file: "bun-down" },
@@ -28,7 +32,7 @@ const topBun = ingredients[ingredients.length - 1];
 const fillings = ingredients.slice(1, -1);
 
 const ui = Object.fromEntries(
-  ["board", "playfield", "action", "welcome", "ingredient", "height", "best", "caption", "gift"]
+  ["stage", "board", "resultAnimation", "playfield", "action", "welcome", "ingredient", "height", "best", "caption", "gift"]
     .map(id => [id, document.getElementById(id)]),
 );
 const ctx = ui.board.getContext("2d");
@@ -41,6 +45,7 @@ const number = new Intl.NumberFormat("ru", {
 let best = loadBest();
 let phase = "loading";
 let stack = [];
+let catAnimationUrl = null;
 let bag = [];
 let previousFilling;
 let piece;
@@ -116,7 +121,32 @@ function showGiftIfEarned() {
   ui.gift.showModal();
 }
 
+async function playResultAnimation() {
+  if (!catGif) return;
+  const resultStack = stack;
+  const data = await catGif;
+  if (phase !== "finished" || stack !== resultStack) return;
+
+  // A fresh URL starts the animation from the first frame on every loss.
+  catAnimationUrl = data ? URL.createObjectURL(data) : null;
+  ui.resultAnimation.src = catAnimationUrl || CAT_GIF;
+  try {
+    await ui.resultAnimation.decode();
+  } catch {
+    return;
+  }
+  if (phase !== "finished" || stack !== resultStack) return;
+  ui.resultAnimation.hidden = false;
+  ui.stage.classList.add("cat-result");
+}
+
 function begin() {
+  ui.resultAnimation.hidden = true;
+  ui.stage.classList.remove("cat-result");
+  ui.resultAnimation.removeAttribute("src");
+  if (catAnimationUrl) URL.revokeObjectURL(catAnimationUrl);
+  catAnimationUrl = null;
+
   stack = [{ sprite: bottomBun, x: CENTER_X, y: 0 }];
   bag = [];
   previousFilling = null;
@@ -221,6 +251,7 @@ function finish() {
   ui.action.focus({ preventScroll: true });
   const label = newRecord ? "Новый рекорд!" : "Башня упала.";
   ui.caption.textContent = `${label} ${formatHeight(stack.length)}`;
+  playResultAnimation();
 }
 
 function advance(dt) {

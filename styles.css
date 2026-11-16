@@ -122,6 +122,22 @@ h1 {
 }
 
 canvas { pointer-events: none; }
+
+.result-animation {
+  position: absolute;
+  inset: auto auto 0 50%;
+  width: 102%;
+  height: auto;
+  max-height: calc(100% - 25px);
+  object-fit: contain;
+  object-position: center bottom;
+  transform: translate(-50%, 12.5%);
+  pointer-events: none;
+}
+
+.stage.cat-result .counter,
+.stage.cat-result canvas { visibility: hidden; }
+
 .playfield { border: 0; padding: 0; background: none; cursor: pointer; }
 .playfield:disabled { cursor: default; }
 .playfield:focus-visible { outline-offset: -6px; border-radius: 16px; }
