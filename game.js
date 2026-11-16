@@ -1,28 +1,32 @@
 "use strict";
 
 const WORLD_WIDTH = 400;
+const LAYER_WIDTH = 122;
 const CENTIMETERS_PER_LAYER = 5;
+const GIFT_HEIGHT_CM = 100;
+const ALIGNMENT_TOLERANCE = 7;
+const SCRAP_DURATION = 0.44;
 const BEST_KEY = "burger-tower-best-layers";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const ingredients = [
-  { file: "bun-down", width: 184 },
-  { file: "becon", name: "Бекон", width: 174 },
-  { file: "chees", name: "Сыр", width: 178 },
-  { file: "cutlet", name: "Котлета", width: 172 },
-  { file: "onion", name: "Лук", width: 165 },
-  { file: "pickls", name: "Огурцы", width: 165 },
-  { file: "salat", name: "Салат", width: 182 },
-  { file: "sauce", name: "Соус", width: 159 },
-  { file: "tomato", name: "Помидоры", width: 173 },
-  { file: "bun-up", name: "Верхняя булочка", width: 191 },
+  { file: "bun-down" },
+  { file: "becon", name: "Бекон" },
+  { file: "chees", name: "Сыр" },
+  { file: "cutlet", name: "Котлета" },
+  { file: "onion", name: "Лук" },
+  { file: "pickls", name: "Огурцы" },
+  { file: "salat", name: "Салат" },
+  { file: "sauce", name: "Соус" },
+  { file: "tomato", name: "Помидоры" },
+  { file: "bun-up", width: 126 },
 ];
 const bottomBun = ingredients[0];
 const topBun = ingredients[ingredients.length - 1];
 const fillings = ingredients.slice(1, -1);
 
 const ui = Object.fromEntries(
-  ["board", "playfield", "action", "welcome", "ingredient", "height", "best", "caption"]
+  ["board", "playfield", "action", "welcome", "ingredient", "height", "best", "caption", "gift", "giftContinue"]
     .map(id => [id, document.getElementById(id)]),
 );
 const ctx = ui.board.getContext("2d");
@@ -38,7 +42,9 @@ let stack = [];
 let bag = [];
 let previousFilling;
 let piece;
-let fallen;
+let scraps = [];
+let roundTime = 0;
+let giftShown = false;
 let elapsed = 0;
 let lastFrame = 0;
 let frameId = 0;
@@ -93,11 +99,28 @@ function topLayer() {
   return stack[stack.length - 1];
 }
 
+function fullLayer(sprite, x, y) {
+  return { sprite, x, y, left: x - sprite.width / 2, right: x + sprite.width / 2 };
+}
+
+function centerOf(layer) {
+  return (layer.left + layer.right) / 2;
+}
+
+function showGiftIfEarned() {
+  if (giftShown || stack.length * CENTIMETERS_PER_LAYER < GIFT_HEIGHT_CM) return;
+  giftShown = true;
+  ui.giftContinue.textContent = phase === "finished" ? "К результату" : "Продолжить игру";
+  ui.gift.showModal();
+}
+
 function begin() {
-  stack = [{ sprite: bottomBun, x: WORLD_WIDTH / 2, y: 0 }];
+  stack = [fullLayer(bottomBun, WORLD_WIDTH / 2, 0)];
   bag = [];
   previousFilling = null;
-  fallen = null;
+  scraps = [];
+  roundTime = 0;
+  giftShown = false;
   zoom = 1;
   camera = 0;
   ui.welcome.hidden = true;
@@ -112,16 +135,16 @@ function begin() {
 
 function spawn() {
   const sprite = nextFilling();
-  const left = sprite.width / 2 + 8;
-  const right = WORLD_WIDTH - left;
+  const leftLimit = 38;
+  const rightLimit = WORLD_WIDTH - leftLimit;
   const fromLeft = Math.random() < 0.5;
   piece = {
     sprite,
-    x: fromLeft ? left : right,
+    x: fromLeft ? leftLimit : rightLimit,
     y: topLayer().y + topLayer().sprite.rise + dropGap(sprite),
     direction: fromLeft ? 1 : -1,
-    left,
-    right,
+    leftLimit,
+    rightLimit,
   };
   ui.ingredient.textContent = sprite.name;
   ui.ingredient.hidden = false;
@@ -133,6 +156,7 @@ function dropGap(sprite) {
 }
 
 function place() {
+  if (ui.gift.open) return;
   if (phase === "ready" || phase === "finished") {
     begin();
   } else if (phase === "aiming") {
@@ -143,31 +167,35 @@ function place() {
   }
 }
 
-function landsOnStack(x, sprite, support, fillingCount) {
-  const offset = x - support.x;
-  const tolerance = Math.max(21, 43 - fillingCount * 1.15);
-  const insideCounter = x - sprite.width / 2 > 4 && x + sprite.width / 2 < WORLD_WIDTH - 4;
-  return Math.abs(offset) <= tolerance && insideCounter;
+function addScrap(layer, left, right, direction) {
+  if (right <= left) return;
+  scraps.push({ ...layer, left, right, direction, age: 0 });
 }
 
 function landing() {
   const support = topLayer();
-  if (landsOnStack(piece.x, piece.sprite, support, stack.length - 1)) {
-    const offset = piece.x - support.x;
-    const center = Math.abs(offset) <= 8 ? support.x : support.x + offset * 0.58;
-    const margin = topBun.width / 2 + 4;
-    const x = Math.max(margin, Math.min(WORLD_WIDTH - margin, center));
-    stack.push({ sprite: piece.sprite, x, y: piece.y });
+  const center = centerOf(support);
+  const x = Math.abs(piece.x - center) <= ALIGNMENT_TOLERANCE ? center : piece.x;
+  const layer = fullLayer(piece.sprite, x, piece.y);
+  const left = Math.max(layer.left, support.left);
+  const right = Math.min(layer.right, support.right);
+  if (right > left) {
+    stack.push({ ...layer, left, right });
+    addScrap(layer, layer.left, left, -1);
+    addScrap(layer, right, layer.right, 1);
     updateScore();
     spawn();
+    showGiftIfEarned();
     return;
   }
 
-  fallen = { ...piece, direction: Math.sign(piece.x - support.x) || 1 };
+  addScrap(layer, layer.left, layer.right, Math.sign(piece.x - center));
   const targetY = support.y + support.sprite.rise;
+  const capWidth = Math.min(topBun.width, Math.max(LAYER_WIDTH * 0.30, support.right - support.left + 8));
+  const cap = { ...topBun, width: capWidth, height: topBun.height * capWidth / topBun.width };
   piece = {
-    sprite: topBun,
-    x: support.x,
+    sprite: cap,
+    x: center,
     y: targetY + 84,
     startY: targetY + 84,
   };
@@ -178,27 +206,32 @@ function landing() {
 }
 
 function finish() {
-  stack.push({ sprite: topBun, x: piece.x, y: piece.y });
+  stack.push(fullLayer(piece.sprite, piece.x, piece.y));
   const newRecord = stack.length > best;
   if (newRecord) {
     best = stack.length;
     saveBest();
   }
   updateScore();
-  fallen = null;
   phase = "finished";
   ui.playfield.setAttribute("aria-label", "Сыграть ещё");
   ui.action.textContent = "Сыграть ещё";
   const label = newRecord ? "Новый рекорд!" : "Бургер готов!";
   ui.caption.textContent = `${label} ${formatHeight(stack.length)}`;
+  showGiftIfEarned();
 }
 
 function advance(dt) {
+  if (ui.gift.open) return;
+  for (const scrap of scraps) scrap.age += dt;
+  scraps = scraps.filter(scrap => scrap.age < SCRAP_DURATION);
+  if (phase === "aiming" || phase === "dropping") roundTime += dt;
+
   if (phase === "aiming") {
-    const speed = Math.min(355, 154 + (stack.length - 1) * 12);
+    const speed = Math.min(350, 116 + roundTime * 6 + (stack.length - 1) * 2);
     piece.x += piece.direction * speed * dt;
-    if (piece.x < piece.left || piece.x > piece.right) {
-      const edge = piece.direction > 0 ? piece.right : piece.left;
+    if (piece.x < piece.leftLimit || piece.x > piece.rightLimit) {
+      const edge = piece.direction > 0 ? piece.rightLimit : piece.leftLimit;
       piece.x = edge * 2 - piece.x;
       piece.direction *= -1;
     }
@@ -236,9 +269,18 @@ function drawSprite(sprite, x, y) {
   ctx.drawImage(sprite.image, x - sprite.width / 2, y - sprite.height, sprite.width, sprite.height);
 }
 
+function drawLayer(layer) {
+  const { sprite, x, y, left, right } = layer;
+  const visibleWidth = right - left;
+  const imageScale = sprite.image.naturalWidth / sprite.width;
+  const sourceX = (left - x + sprite.width / 2) * imageScale;
+  ctx.drawImage(sprite.image, sourceX, 0, visibleWidth * imageScale, sprite.image.naturalHeight,
+    left, -y - sprite.height, visibleWidth, sprite.height);
+}
+
 function drawArrow(support) {
   ctx.save();
-  ctx.translate(support.x, -support.y - support.sprite.height - 7);
+  ctx.translate(centerOf(support), -support.y - support.sprite.height - 7);
   ctx.fillStyle = "#245444";
   ctx.beginPath();
   ctx.moveTo(-7, -7);
@@ -247,6 +289,21 @@ function drawArrow(support) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+}
+
+function drawScraps() {
+  if (reducedMotion) return;
+  for (const scrap of scraps) {
+    const x = centerOf(scrap);
+    const y = -scrap.y - scrap.sprite.height / 2;
+    ctx.save();
+    ctx.translate(x + scrap.direction * scrap.age * 86, y + scrap.age ** 2 * 1400);
+    ctx.rotate(scrap.direction * scrap.age * 4.5);
+    ctx.translate(-x, -y);
+    ctx.globalAlpha = 1 - scrap.age / SCRAP_DURATION;
+    drawLayer(scrap);
+    ctx.restore();
+  }
 }
 
 function draw(dt) {
@@ -272,7 +329,7 @@ function draw(dt) {
 
   ctx.fillStyle = "#673d2480";
   ctx.beginPath();
-  ctx.ellipse(WORLD_WIDTH / 2, -1, 102, 11, 0, 0, Math.PI * 2);
+  ctx.ellipse(WORLD_WIDTH / 2, -1, LAYER_WIDTH * 0.54, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // Old layers can scroll below the screen as the camera follows the top.
@@ -281,24 +338,15 @@ function draw(dt) {
     firstVisible--;
   }
   for (let i = firstVisible; i < stack.length; i++) {
-    const layer = stack[i];
-    drawSprite(layer.sprite, layer.x, -layer.y);
+    drawLayer(stack[i]);
   }
 
   if (phase === "aiming") drawArrow(topLayer());
-  if (fallen) {
-    const x = fallen.x + fallen.direction * elapsed * 116;
-    const y = -fallen.y + elapsed ** 2 * 1400;
-    ctx.save();
-    ctx.translate(x, y - fallen.sprite.height / 2);
-    ctx.rotate(fallen.direction * elapsed * 4.5);
-    ctx.globalAlpha = 1 - Math.min(1, elapsed / 0.42);
-    drawSprite(fallen.sprite, 0, fallen.sprite.height / 2);
-    ctx.restore();
-  }
+  drawScraps();
   if (playing) drawSprite(piece.sprite, piece.x, -piece.y);
 
-  return playing || Math.abs(zoom - desiredZoom) > 0.001 || Math.abs(camera - desiredCamera) > 0.1;
+  return (!ui.gift.open && (playing || scraps.length > 0))
+    || Math.abs(zoom - desiredZoom) > 0.001 || Math.abs(camera - desiredCamera) > 0.1;
 }
 
 function requestDraw() {
@@ -316,6 +364,10 @@ function tick(now) {
 
 ui.playfield.addEventListener("click", place);
 ui.action.addEventListener("click", place);
+ui.gift.addEventListener("close", () => {
+  ui.action.focus({ preventScroll: true });
+  requestDraw();
+});
 document.addEventListener("keydown", event => {
   if (event.code !== "Space" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   if (event.target instanceof HTMLButtonElement) return;
@@ -327,12 +379,14 @@ new ResizeObserver(resize).observe(ui.board);
 Promise.all(ingredients.map(async sprite => {
   const image = new Image();
   sprite.image = image;
-  image.src = `assets/${sprite.file}.png`;
+  const version = sprite === topBun ? "?v=2" : "";
+  image.src = `assets/${sprite.file}.png${version}`;
   await image.decode();
+  sprite.width ??= LAYER_WIDTH;
   sprite.height = sprite.width * image.naturalHeight / image.naturalWidth;
   sprite.rise = sprite.height * (sprite === bottomBun ? 0.73 : 0.62);
 })).then(() => {
-  stack = [{ sprite: bottomBun, x: WORLD_WIDTH / 2, y: 0 }];
+  stack = [fullLayer(bottomBun, WORLD_WIDTH / 2, 0)];
   phase = "ready";
   ui.action.textContent = "Начать игру";
   ui.action.disabled = false;

@@ -5,15 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#fff3d9">
   <meta name="description" content="Лови ингредиенты одним касанием и собери самый высокий бургер.">
-  <title>Бургер-башня</title>
-  <link rel="icon" href="assets/bun-up.png" type="image/png">
-  <link rel="stylesheet" href="styles.css">
-  <script src="game.js" defer></script>
+  <title>Chef Burger</title>
+  <link rel="icon" href="assets/bun-up.png?v=2" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=2">
+  <script src="game.js?v=2" defer></script>
 </head>
 <body>
   <main class="game">
     <header class="masthead">
-      <h1>Бургер-башня</h1>
+      <h1>Chef Burger</h1>
       <div class="scores" aria-label="Счёт">
         <div class="score">
           <span>Высота</span>
@@ -40,10 +40,18 @@
     </section>
 
     <footer class="controls">
-      <p class="caption" id="caption" role="status">Каждый слой добавляет 5 см</p>
+      <p class="caption" id="caption" role="status">Собери бургер высотой 1 м и получи подарок</p>
       <button class="action" id="action" type="button" disabled>Загрузка…</button>
     </footer>
   </main>
+  <dialog class="gift" id="gift" aria-labelledby="gift-title">
+    <img class="gift-image" src="assets/gift.png" alt="" width="112" height="112">
+    <h2 id="gift-title">Подарок за 1 метр!</h2>
+    <p><strong>Книга «Азбука вкуса»</strong><br>Карен Пейдж и Эндрю Дорненбург</p>
+    <form method="dialog">
+      <button class="action" id="giftContinue" type="submit" autofocus>Продолжить игру</button>
+    </form>
+  </dialog>
   <noscript>Включи JavaScript в браузере, чтобы сыграть.</noscript>
 </body>
 </html>

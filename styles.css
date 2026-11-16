@@ -37,7 +37,8 @@ h1 {
   margin: 0;
   font-size: clamp(29px, 9vw, 50px);
   line-height: 1.03;
-  letter-spacing: -0.08em;
+  letter-spacing: -0.05em;
+  word-spacing: 0.04em;
   text-align: center;
   font-weight: 950;
   color: #8d3222;
@@ -200,6 +201,25 @@ canvas { pointer-events: none; }
 
 .action:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
 .action:disabled { cursor: default; }
+
+.gift {
+  width: min(340px, calc(100% - 36px));
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  padding: 22px;
+  border: 2px solid var(--ink);
+  border-radius: 20px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 4px 0 var(--ink);
+  text-align: center;
+}
+
+.gift::backdrop { background: #252018a8; }
+.gift-image { display: block; margin: 0 auto 8px; object-fit: contain; }
+.gift h2 { margin: 0; font-size: clamp(21px, 6vw, 27px); color: #8d3222; }
+.gift p { margin: 6px 0 18px; font-size: 14px; }
+.gift .action { width: 100%; }
 
 @media (min-width: 560px) {
   body {
