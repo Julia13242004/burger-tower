@@ -1,11 +1,13 @@
 "use strict";
 
 const WORLD_WIDTH = 400;
+const CENTER_X = WORLD_WIDTH / 2;
 const LAYER_WIDTH = 122;
 const CENTIMETERS_PER_LAYER = 5;
-const GIFT_HEIGHT_CM = 100;
-const ALIGNMENT_TOLERANCE = 7;
-const SCRAP_DURATION = 0.44;
+const GIFT_HEIGHT_CM = 1000;
+const MAX_BALANCE = 0.95;
+const MAX_LANDING_OFFSET = LAYER_WIDTH * 0.54;
+const FALL_DURATION = 0.92;
 const BEST_KEY = "burger-tower-best-layers";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -26,7 +28,7 @@ const topBun = ingredients[ingredients.length - 1];
 const fillings = ingredients.slice(1, -1);
 
 const ui = Object.fromEntries(
-  ["board", "playfield", "action", "welcome", "ingredient", "height", "best", "caption", "gift", "giftContinue"]
+  ["board", "playfield", "action", "welcome", "ingredient", "height", "best", "caption", "gift"]
     .map(id => [id, document.getElementById(id)]),
 );
 const ctx = ui.board.getContext("2d");
@@ -42,14 +44,15 @@ let stack = [];
 let bag = [];
 let previousFilling;
 let piece;
-let scraps = [];
+let balance = 0;
+let lean = 0;
+let fallDirection = 0;
 let roundTime = 0;
 let giftShown = false;
 let elapsed = 0;
 let lastFrame = 0;
 let frameId = 0;
 let camera = 0;
-let zoom = 1;
 let width = 0;
 let height = 0;
 
@@ -99,35 +102,36 @@ function topLayer() {
   return stack[stack.length - 1];
 }
 
-function fullLayer(sprite, x, y) {
-  return { sprite, x, y, left: x - sprite.width / 2, right: x + sprite.width / 2 };
+function towerSway(y) {
+  return lean * 64 * y / Math.max(64, topLayer().y);
 }
 
-function centerOf(layer) {
-  return (layer.left + layer.right) / 2;
+function layerX(layer) {
+  return layer.x + towerSway(layer.y);
 }
 
 function showGiftIfEarned() {
   if (giftShown || stack.length * CENTIMETERS_PER_LAYER < GIFT_HEIGHT_CM) return;
   giftShown = true;
-  ui.giftContinue.textContent = phase === "finished" ? "К результату" : "Продолжить игру";
   ui.gift.showModal();
 }
 
 function begin() {
-  stack = [fullLayer(bottomBun, WORLD_WIDTH / 2, 0)];
+  stack = [{ sprite: bottomBun, x: CENTER_X, y: 0 }];
   bag = [];
   previousFilling = null;
-  scraps = [];
+  balance = 0;
+  lean = 0;
+  fallDirection = 0;
   roundTime = 0;
   giftShown = false;
-  zoom = 1;
   camera = 0;
   ui.welcome.hidden = true;
   ui.action.textContent = "Положить слой";
+  ui.action.disabled = false;
   ui.playfield.disabled = false;
   ui.playfield.setAttribute("aria-label", "Положить слой");
-  ui.caption.textContent = "Коснись, когда слой окажется над башней";
+  updateBalanceHint();
   updateScore();
   spawn();
   requestDraw();
@@ -135,7 +139,7 @@ function begin() {
 
 function spawn() {
   const sprite = nextFilling();
-  const leftLimit = 38;
+  const leftLimit = sprite.width / 2 + 4;
   const rightLimit = WORLD_WIDTH - leftLimit;
   const fromLeft = Math.random() < 0.5;
   piece = {
@@ -167,46 +171,41 @@ function place() {
   }
 }
 
-function addScrap(layer, left, right, direction) {
-  if (right <= left) return;
-  scraps.push({ ...layer, left, right, direction, age: 0 });
+function updateBalanceHint() {
+  const message = Math.abs(balance) >= 0.55
+    ? (balance > 0 ? "Башня наклоняется вправо" : "Башня наклоняется влево")
+    : "Коснись, когда слой окажется над башней";
+  if (ui.caption.textContent !== message) ui.caption.textContent = message;
 }
 
 function landing() {
   const support = topLayer();
-  const center = centerOf(support);
-  const x = Math.abs(piece.x - center) <= ALIGNMENT_TOLERANCE ? center : piece.x;
-  const layer = fullLayer(piece.sprite, x, piece.y);
-  const left = Math.max(layer.left, support.left);
-  const right = Math.min(layer.right, support.right);
-  if (right > left) {
-    stack.push({ ...layer, left, right });
-    addScrap(layer, layer.left, left, -1);
-    addScrap(layer, right, layer.right, 1);
-    updateScore();
-    spawn();
-    showGiftIfEarned();
+  const offset = piece.x - layerX(support);
+  const nextBalance = balance * 0.76 + offset / (LAYER_WIDTH * 0.78);
+  const tooFar = Math.abs(offset) > MAX_LANDING_OFFSET;
+  if (tooFar || Math.abs(nextBalance) >= MAX_BALANCE) {
+    fallDirection = Math.sign(tooFar ? offset : nextBalance);
+    ui.ingredient.hidden = true;
+    ui.caption.textContent = "Башня падает!";
+    ui.playfield.disabled = true;
+    ui.action.disabled = true;
+    phase = "falling";
+    elapsed = 0;
+    if (reducedMotion) finish();
     return;
   }
 
-  addScrap(layer, layer.left, layer.right, Math.sign(piece.x - center));
-  const targetY = support.y + support.sprite.rise;
-  const capWidth = Math.min(topBun.width, Math.max(LAYER_WIDTH * 0.30, support.right - support.left + 8));
-  const cap = { ...topBun, width: capWidth, height: topBun.height * capWidth / topBun.width };
-  piece = {
-    sprite: cap,
-    x: center,
-    y: targetY + 84,
-    startY: targetY + 84,
-  };
-  ui.ingredient.hidden = true;
-  ui.caption.textContent = "Промах! Закрываем бургер…";
-  phase = "closing";
-  elapsed = 0;
+  // Let layers settle slightly towards the middle so small errors can be corrected.
+  const x = CENTER_X + (piece.x - towerSway(support.y) - CENTER_X) * 0.76;
+  stack.push({ sprite: piece.sprite, x, y: piece.y });
+  balance = nextBalance;
+  updateScore();
+  updateBalanceHint();
+  spawn();
+  showGiftIfEarned();
 }
 
 function finish() {
-  stack.push(fullLayer(piece.sprite, piece.x, piece.y));
   const newRecord = stack.length > best;
   if (newRecord) {
     best = stack.length;
@@ -214,21 +213,25 @@ function finish() {
   }
   updateScore();
   phase = "finished";
+  camera = 0;
+  ui.playfield.disabled = false;
   ui.playfield.setAttribute("aria-label", "Сыграть ещё");
+  ui.action.disabled = false;
   ui.action.textContent = "Сыграть ещё";
-  const label = newRecord ? "Новый рекорд!" : "Бургер готов!";
+  ui.action.focus({ preventScroll: true });
+  const label = newRecord ? "Новый рекорд!" : "Башня упала.";
   ui.caption.textContent = `${label} ${formatHeight(stack.length)}`;
-  showGiftIfEarned();
 }
 
 function advance(dt) {
   if (ui.gift.open) return;
-  for (const scrap of scraps) scrap.age += dt;
-  scraps = scraps.filter(scrap => scrap.age < SCRAP_DURATION);
-  if (phase === "aiming" || phase === "dropping") roundTime += dt;
+  if (phase === "aiming" || phase === "dropping") {
+    roundTime += dt;
+    lean += (balance - lean) * (1 - Math.exp(-dt * 8));
+  }
 
   if (phase === "aiming") {
-    const speed = Math.min(350, 116 + roundTime * 6 + (stack.length - 1) * 2);
+    const speed = Math.min(292, 116 + roundTime * 3.4 + (stack.length - 1) * 0.65);
     piece.x += piece.direction * speed * dt;
     if (piece.x < piece.leftLimit || piece.x > piece.rightLimit) {
       const edge = piece.direction > 0 ? piece.rightLimit : piece.leftLimit;
@@ -237,18 +240,17 @@ function advance(dt) {
     }
   }
 
-  if (phase === "dropping" || phase === "closing") {
+  if (phase === "dropping") {
     elapsed += dt;
-    const duration = phase === "closing" ? 0.44 : 0.21;
-    const progress = Math.min(1, elapsed / duration);
+    const progress = Math.min(1, elapsed / 0.21);
     const support = topLayer();
     const targetY = support.y + support.sprite.rise;
     piece.y = piece.startY + (targetY - piece.startY) * progress ** 1.7;
 
-    if (progress === 1) {
-      if (phase === "closing") finish();
-      else landing();
-    }
+    if (progress === 1) landing();
+  } else if (phase === "falling") {
+    elapsed += dt;
+    if (elapsed >= FALL_DURATION) finish();
   }
 }
 
@@ -269,19 +271,18 @@ function drawSprite(sprite, x, y) {
   ctx.drawImage(sprite.image, x - sprite.width / 2, y - sprite.height, sprite.width, sprite.height);
 }
 
-function drawLayer(layer) {
-  const { sprite, x, y, left, right } = layer;
-  const visibleWidth = right - left;
-  const imageScale = sprite.image.naturalWidth / sprite.width;
-  const sourceX = (left - x + sprite.width / 2) * imageScale;
-  ctx.drawImage(sprite.image, sourceX, 0, visibleWidth * imageScale, sprite.image.naturalHeight,
-    left, -y - sprite.height, visibleWidth, sprite.height);
+function drawTiltedSprite(sprite, x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  drawSprite(sprite, 0, 0);
+  ctx.restore();
 }
 
 function drawArrow(support) {
   ctx.save();
-  ctx.translate(centerOf(support), -support.y - support.sprite.height - 7);
-  ctx.fillStyle = "#245444";
+  ctx.translate(layerX(support), -support.y - support.sprite.height - 7);
+  ctx.fillStyle = Math.abs(balance) >= 0.55 ? "#a13a27" : "#245444";
   ctx.beginPath();
   ctx.moveTo(-7, -7);
   ctx.lineTo(7, -7);
@@ -291,18 +292,47 @@ function drawArrow(support) {
   ctx.restore();
 }
 
-function drawScraps() {
-  if (reducedMotion) return;
-  for (const scrap of scraps) {
-    const x = centerOf(scrap);
-    const y = -scrap.y - scrap.sprite.height / 2;
-    ctx.save();
-    ctx.translate(x + scrap.direction * scrap.age * 86, y + scrap.age ** 2 * 1400);
-    ctx.rotate(scrap.direction * scrap.age * 4.5);
-    ctx.translate(-x, -y);
-    ctx.globalAlpha = 1 - scrap.age / SCRAP_DURATION;
-    drawLayer(scrap);
-    ctx.restore();
+function drawTower(floor, field) {
+  // Skip layers that have scrolled below the camera.
+  let firstVisible = stack.length - 1;
+  while (firstVisible > 0 && floor - stack[firstVisible].y < field + 100) {
+    firstVisible--;
+  }
+  for (let i = firstVisible; i < stack.length; i++) {
+    const layer = stack[i];
+    const angle = lean * 0.27 * Math.min(1, layer.y / 56);
+    drawTiltedSprite(layer.sprite, layerX(layer), -layer.y, angle);
+  }
+}
+
+function drawCollapse(floor, field) {
+  const progress = Math.min(1, elapsed / FALL_DURATION);
+  const pivotY = Math.max(0, floor - field * 0.90);
+  const drop = progress ** 3 * field * 0.55;
+  const turn = fallDirection * progress ** 1.65 * 1.54;
+  const support = topLayer();
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, (1 - progress) * 4);
+  ctx.translate(CENTER_X, -pivotY + drop);
+  ctx.rotate(turn);
+  ctx.translate(-CENTER_X, pivotY);
+  drawTower(floor, field);
+  drawTiltedSprite(piece.sprite, piece.x + fallDirection * 44 * progress,
+    -piece.y + 170 * progress ** 2, fallDirection * progress * 1.7);
+  const lift = Math.max(0, 1 - progress * 3) * 62;
+  drawTiltedSprite(topBun, layerX(support), -(support.y + support.sprite.rise + lift), lean * 0.27);
+  ctx.restore();
+}
+
+function drawPile() {
+  const layers = stack.slice(-5).map(layer => layer.sprite);
+  layers.push(piece.sprite, topBun);
+  for (let i = 0; i < layers.length; i++) {
+    const x = CENTER_X + fallDirection * (i % 2 === 0 ? i * 9 : -i * 6);
+    const y = -Math.min(i, 5) * 4;
+    const angle = fallDirection * (i % 2 === 0 ? i : -i) * 0.075;
+    drawTiltedSprite(layers[i], x, y, angle);
   }
 }
 
@@ -312,41 +342,32 @@ function draw(dt) {
   const field = worldHeight();
   const base = field * 0.80;
   const head = topLayer().y + topLayer().sprite.height;
-  const playing = phase === "aiming" || phase === "dropping" || phase === "closing";
-  const desiredZoom = phase === "finished" ? Math.min(1, (base - 50) / head) : 1;
+  const playing = phase === "aiming" || phase === "dropping";
+  const falling = phase === "falling";
   const desiredCamera = playing ? Math.max(0, head - field * 0.34) : 0;
   const blend = reducedMotion ? 1 : 1 - Math.exp(-dt * 10);
-  zoom += (desiredZoom - zoom) * blend;
-  camera += (desiredCamera - camera) * blend;
+  if (!falling) camera += (desiredCamera - camera) * blend;
 
   const scale = ui.board.width / WORLD_WIDTH;
   const floor = base + camera;
   counter.style.transform = `translateY(${camera * width / WORLD_WIDTH}px)`;
   ctx.setTransform(scale, 0, 0, ui.board.height / field, 0, 0);
   ctx.clearRect(0, 0, WORLD_WIDTH, field);
-  ctx.translate(WORLD_WIDTH * (1 - zoom) / 2, floor);
-  ctx.scale(zoom, zoom);
+  ctx.translate(0, floor);
 
   ctx.fillStyle = "#673d2480";
   ctx.beginPath();
-  ctx.ellipse(WORLD_WIDTH / 2, -1, LAYER_WIDTH * 0.54, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(CENTER_X, -1, LAYER_WIDTH * 0.54, 8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Old layers can scroll below the screen as the camera follows the top.
-  let firstVisible = stack.length - 1;
-  while (firstVisible > 0 && floor - stack[firstVisible].y * zoom < field + 80) {
-    firstVisible--;
-  }
-  for (let i = firstVisible; i < stack.length; i++) {
-    drawLayer(stack[i]);
-  }
+  if (falling) drawCollapse(floor, field);
+  else if (phase === "finished") drawPile();
+  else drawTower(floor, field);
 
   if (phase === "aiming") drawArrow(topLayer());
-  drawScraps();
   if (playing) drawSprite(piece.sprite, piece.x, -piece.y);
 
-  return (!ui.gift.open && (playing || scraps.length > 0))
-    || Math.abs(zoom - desiredZoom) > 0.001 || Math.abs(camera - desiredCamera) > 0.1;
+  return !ui.gift.open && (playing || falling);
 }
 
 function requestDraw() {
@@ -386,7 +407,7 @@ Promise.all(ingredients.map(async sprite => {
   sprite.height = sprite.width * image.naturalHeight / image.naturalWidth;
   sprite.rise = sprite.height * (sprite === bottomBun ? 0.73 : 0.62);
 })).then(() => {
-  stack = [fullLayer(bottomBun, WORLD_WIDTH / 2, 0)];
+  stack = [{ sprite: bottomBun, x: CENTER_X, y: 0 }];
   phase = "ready";
   ui.action.textContent = "Начать игру";
   ui.action.disabled = false;

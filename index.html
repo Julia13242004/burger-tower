@@ -8,7 +8,7 @@
   <title>Chef Burger</title>
   <link rel="icon" href="assets/bun-up.png?v=2" type="image/png">
   <link rel="stylesheet" href="styles.css?v=2">
-  <script src="game.js?v=2" defer></script>
+  <script src="game.js?v=3" defer></script>
 </head>
 <body>
   <main class="game">
@@ -34,22 +34,22 @@
       <button class="playfield" id="playfield" type="button" aria-label="Положить слой" disabled></button>
       <div class="welcome" id="welcome">
         <span class="welcome-title">Поймай момент!</span>
-        <p>Коснись экрана, когда слой окажется над башней.</p>
+        <p>Коснись экрана, когда слой окажется над башней. Старайся держать её ровно.</p>
       </div>
       <div class="ingredient" id="ingredient" hidden></div>
     </section>
 
     <footer class="controls">
-      <p class="caption" id="caption" role="status">Собери бургер высотой 1 м и получи подарок</p>
+      <p class="caption" id="caption" role="status">Собери бургер высотой 10 м и получи подарок</p>
       <button class="action" id="action" type="button" disabled>Загрузка…</button>
     </footer>
   </main>
   <dialog class="gift" id="gift" aria-labelledby="gift-title">
     <img class="gift-image" src="assets/gift.png" alt="" width="112" height="112">
-    <h2 id="gift-title">Подарок за 1 метр!</h2>
+    <h2 id="gift-title">Подарок за 10 метров!</h2>
     <p><strong>Книга «Азбука вкуса»</strong><br>Карен Пейдж и Эндрю Дорненбург</p>
     <form method="dialog">
-      <button class="action" id="giftContinue" type="submit" autofocus>Продолжить игру</button>
+      <button class="action" type="submit" autofocus>Продолжить игру</button>
     </form>
   </dialog>
   <noscript>Включи JavaScript в браузере, чтобы сыграть.</noscript>
